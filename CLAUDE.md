@@ -10,48 +10,60 @@ Windows desktop tool that toggles the built-in **Loudness Equalization** audio e
 
 ```bash
 # Build
+cd LoudnessEqualizer
 dotnet build -c Release
 
-# Publish self-contained single-file .exe
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+# Publish self-contained single-file .exe (with Chinese variant)
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=none -o publish
+cp publish/LoudnessEqualizer.exe publish/LoudnessEqualizer-zh.exe
 
 # Headless toggle (must run as admin)
 dotnet run -c Release --no-build -- --apply on --device "Speakers"
 dotnet run -c Release --no-build -- --apply off --device "Headset"
 
-# Chinese UI (rename or flag)
-cp publish/LoudnessEqualizer.exe publish/LoudnessEqualizer-zh.exe
+# Show help
+dotnet run -c Release --no-build -- --help
 ```
 
-No test suite exists.
+No test suite exists. Git remote uses SSH (`git@github.com:Ey4n9/Loudness_Equalization.git`).
 
 ## Architecture
 
-Four source files, all in `LoudnessEqualizer/` namespace `LoudnessEqualizer`:
+Four source files in `LoudnessEqualizer/` namespace `LoudnessEqualizer`, plus docs:
 
 ### [Program.cs](LoudnessEqualizer/Program.cs) — Entry point + COM interop types
-- `Main()` parses `--device`, `--lang`, and `--apply on|off` from args
-- Language auto-detection: if exe filename contains `-zh` or `_zh`, defaults to Chinese
+- `Main()` parses `--device`, `--lang`, `--help`/`-h`, and `--apply on|off` from args
+- Language auto-detection: if exe filename contains `-zh` or `_zh`, defaults to Chinese; `--lang zh` override
+- `--help` / `-h` prints bilingual usage text and exits
 - Headless mode: applies setting + restarts audio service, exits with 0 or 1
 - GUI mode: `Application.Run(new MainForm(...))`
 - Defines all COM interop types: `IMMDeviceEnumerator`, `IMMDevice`, `IPropertyStore`, `PROPVARIANT`, `PROPERTYKEY`, P/Invoke for `PropVariantClear`
 
 ### [MainForm.cs](LoudnessEqualizer/MainForm.cs) — WinForms GUI
 - Device combo box populated from `DeviceManager.ListAllDevices()`
+- Device matching: exact name match first, then substring fallback
 - Status labels showing ON/OFF/Unknown state with color coding
-- Toggle button, 3-second refresh timer
+- Toggle button, 3-second refresh timer (extends to 5s when no device)
 - On `UnauthorizedAccessException`, re-launches itself via `Process.Start` with `Verb = "runas"` to trigger UAC, waits up to 30s for the child to complete
 
 ### [DeviceManager.cs](LoudnessEqualizer/DeviceManager.cs) — Core logic
 - `ListAllDevices()` — registry-first: reads `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render` subkeys, extracts friendly names from `Properties\{a45c254e-df1c-4efd-8020-67d146a850e0},2`. Falls back to COM `IMMDeviceEnumerator` enumeration.
-- `GetState()` — reads `FxProperties\{clsid}\User\{fc52a749-4be9-4510-896e-966ba6525980},3` binary value; bytes [8..9] = `0xFF 0xFF` means ON, `0x00 0x00` means OFF
+- `GetState()` — reads `FxProperties\{clsid}\User\{fc52a749-4be9-4510-896e-966ba6525980},3` binary value; validates 8-byte header (`0B 00 00 00 01 00 00 00`) then checks bytes [8..9]: `0xFF 0xFF` = ON, `0x00 0x00` = OFF; unknown header → Unknown
 - `SetEnabled()` — writes the Enhancement CLSID, enabled/disabled flag, and default release time. Uses `SeRestorePrivilege` + `RegOpenKeyEx(REG_OPTION_BACKUP_RESTORE)` to bypass SYSTEM-owned ACL without modifying the security descriptor.
 - `RestartAudioService()` — spawns `powershell -Command "Restart-Service audiosrv -Force"`, waits up to 30s
-- `DeviceInfo` record: `DeviceId` (GUID with braces), `FriendlyName`, `ContainerId`, `DeviceState`
+- `DeviceInfo` sealed class: `DeviceId` (GUID with braces), `FriendlyName`, `RegistryPath`
+- `SeBackupPrivilege` enable failure is non-fatal; logged via `Debug.WriteLine`
+- Section comment numbering: 1=List, 2=Find, 3=GetState, 4=SetEnabled, 5=RestartAudio
 
 ### [Strings.cs](LoudnessEqualizer/Strings.cs) — Localization
 - `Lang` enum: `En`, `Zh`
 - All user-visible strings as static methods taking `Lang` parameter
+- `Error` used uniformly for error titles and labels (removed duplicate `ErrorTitle`)
+
+### Docs
+- [README.md](README.md) — English documentation
+- [README-zh.md](README-zh.md) — Chinese documentation
+- [CLAUDE.md](CLAUDE.md) — Claude Code project instructions (this file)
 
 ## Key technical details
 
