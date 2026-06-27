@@ -49,5 +49,4 @@ public static class Strings
         ? "正在执行操作，请稍候…"
         : "An operation is in progress. Please wait...";
     public static string Info(Lang lang) => lang == Lang.Zh ? "提示" : "Info";
-    public static string ErrorTitle(Lang lang) => lang == Lang.Zh ? "错误" : "Error";
 }

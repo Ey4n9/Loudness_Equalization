@@ -207,7 +207,7 @@ internal sealed class DeviceManager : IDisposable
     }
 
     // ──────────────────────────────────────────
-    // 2. Read state from FxProperties registry
+    // 3. Read state from FxProperties registry
     //    (no admin needed — HKLM read is public)
     // ──────────────────────────────────────────
     public LoudnessState GetState(DeviceInfo deviceInfo)
@@ -218,7 +218,9 @@ internal sealed class DeviceManager : IDisposable
             if (key is null) continue;
 
             byte[]? bytes = key.GetValue(LoudnessEnabledValue) as byte[];
-            if (bytes is not null && bytes.Length >= 10)
+            if (bytes is not null && bytes.Length >= 10
+                && bytes[0] == 0x0b && bytes[1] == 0x00 && bytes[2] == 0x00 && bytes[3] == 0x00
+                && bytes[4] == 0x01 && bytes[5] == 0x00 && bytes[6] == 0x00 && bytes[7] == 0x00)
                 return (bytes[8] == 0xff && bytes[9] == 0xff) ? LoudnessState.On : LoudnessState.Off;
         }
 
@@ -226,7 +228,7 @@ internal sealed class DeviceManager : IDisposable
     }
 
     // ──────────────────────────────────────────
-    // 3. Write state to FxProperties registry
+    // 4. Write state to FxProperties registry
     //    Uses REG_OPTION_BACKUP_RESTORE to bypass
     //    the SYSTEM-owned ACL without changing it.
     //    All writes go through native RegSetValueEx
@@ -394,7 +396,7 @@ internal sealed class DeviceManager : IDisposable
                 tp.Luid = backupLuid;
                 if (!AdjustTokenPrivileges(hToken, false, ref tp, sz, IntPtr.Zero, IntPtr.Zero))
                 {
-                    // Non-fatal: SeRestorePrivilege alone is sufficient for most operations
+                    Debug.WriteLine($"AdjustTokenPrivileges for SeBackupPrivilege failed (error {Marshal.GetLastWin32Error()}). Continue with SeRestorePrivilege only.");
                 }
             }
         }
@@ -514,7 +516,7 @@ internal sealed class DeviceManager : IDisposable
     }
 
     // ──────────────────────────────────────────
-    // 4. Restart Windows Audio service to apply
+    // 5. Restart Windows Audio service to apply
     //    FxProperties changes.  The audio engine
     //    only re-reads the registry on startup.
     // ──────────────────────────────────────────

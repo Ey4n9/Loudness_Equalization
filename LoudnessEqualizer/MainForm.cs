@@ -141,15 +141,27 @@ public sealed class MainForm : Form
 
         int selectIndex = -1;
 
+        // First pass: exact match
         for (int i = 0; i < _allDevices.Count; i++)
         {
-            var dev = _allDevices[i];
-            _deviceCombo.Items.Add(dev.FriendlyName);
-
+            _deviceCombo.Items.Add(_allDevices[i].FriendlyName);
             if (selectIndex < 0 && preferredDeviceName is not null
-                && dev.FriendlyName.Contains(preferredDeviceName, StringComparison.OrdinalIgnoreCase))
+                && _allDevices[i].FriendlyName.Equals(preferredDeviceName, StringComparison.OrdinalIgnoreCase))
             {
                 selectIndex = i;
+            }
+        }
+
+        // Second pass: substring fallback
+        if (selectIndex < 0 && preferredDeviceName is not null)
+        {
+            for (int i = 0; i < _allDevices.Count; i++)
+            {
+                if (_allDevices[i].FriendlyName.Contains(preferredDeviceName, StringComparison.OrdinalIgnoreCase))
+                {
+                    selectIndex = i;
+                    break;
+                }
             }
         }
 
@@ -255,7 +267,7 @@ public sealed class MainForm : Form
 
     private void ShowErrorAndRecover(string message)
     {
-        MessageBox.Show(this, message, Strings.ErrorTitle(_lang),
+        MessageBox.Show(this, message, Strings.Error(_lang),
             MessageBoxButtons.OK, MessageBoxIcon.Error);
         SetBusy(false, null);
     }
