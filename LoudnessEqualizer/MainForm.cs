@@ -19,33 +19,32 @@ public sealed class MainForm : Form
     private readonly Label _detailLabel;
     private readonly Button _toggleButton;
 
+    // ── Layout constants ──
+    private const int FormW = 480;
+    private const int FormH = 180;
+    private const int PadX  = 30;
+
     public MainForm(string? deviceName = null)
     {
         _deviceManager = new DeviceManager(deviceName);
 
         // ── Window ──
         Text            = "Loudness Equalizer";
-        ClientSize      = new Size(440, 228);
+        ClientSize      = new Size(FormW, FormH);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox     = false;
         StartPosition   = FormStartPosition.CenterScreen;
+        BackColor       = Color.White;
         Font            = new Font("Segoe UI", 9f);
-
-        // ── Device combo ──
-        _deviceCombo = new ComboBox
-        {
-            Dock      = DockStyle.Top,
-            DropDownStyle = ComboBoxStyle.DropDownList
-        };
-        _deviceCombo.SelectedIndexChanged += DeviceCombo_SelectedIndexChanged;
 
         // ── Status label ──
         _statusLabel = new Label
         {
-            Font      = new Font("Segoe UI", 15f, FontStyle.Bold),
+            Font      = new Font("Segoe UI", 14f, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleCenter,
-            Dock      = DockStyle.Top,
-            Height    = 50,
+            ForeColor = Color.FromArgb(50, 50, 50),
+            Size      = new Size(FormW - PadX * 2, 42),
+            Location  = new Point(PadX, 16),
             Text      = "Detecting device..."
         };
 
@@ -53,38 +52,49 @@ public sealed class MainForm : Form
         _detailLabel = new Label
         {
             Font      = new Font("Segoe UI", 9f),
-            ForeColor = Color.Gray,
+            ForeColor = Color.FromArgb(140, 140, 140),
             TextAlign = ContentAlignment.MiddleCenter,
-            Dock      = DockStyle.Top,
-            Height    = 28,
+            Size      = new Size(FormW - PadX * 2, 22),
+            Location  = new Point(PadX, 58),
             Text      = ""
         };
 
-        // ── Button panel ──
-        var buttonPanel = new Panel { Dock = DockStyle.Fill, Height = 50 };
+        // ── Control bar panel (combo + button side by side) ──
+        var barPanel = new Panel
+        {
+            BackColor = Color.White,
+            Size      = new Size(380, 42),
+            Location  = new Point((FormW - 380) / 2, 100)
+        };
+
+        _deviceCombo = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Font          = new Font("Segoe UI", 9f),
+            Size          = new Size(220, 28),
+            Location      = new Point(0, 7)  // vertically centered in 42px panel
+        };
+        _deviceCombo.SelectedIndexChanged += DeviceCombo_SelectedIndexChanged;
 
         _toggleButton = new Button
         {
-            Size      = new Size(130, 36),
+            Size      = new Size(130, 38),
             Text      = "Toggle",
             Enabled   = false,
-            FlatStyle = FlatStyle.System
+            FlatStyle = FlatStyle.Flat,
+            Font      = new Font("Segoe UI", 10f, FontStyle.Bold),
+            Location  = new Point(250, 2)  // 220 + 30 gap, v-centered in 42px panel
         };
         _toggleButton.Click += ToggleButton_Click;
+        _toggleButton.FlatAppearance.BorderSize = 0;
 
-        buttonPanel.Resize += (_, _) =>
-        {
-            int x = (buttonPanel.ClientSize.Width - _toggleButton.Width) / 2;
-            int y = (buttonPanel.ClientSize.Height - _toggleButton.Height) / 2;
-            _toggleButton.Location = new Point(x, y);
-        };
-        buttonPanel.Controls.Add(_toggleButton);
+        barPanel.Controls.Add(_deviceCombo);
+        barPanel.Controls.Add(_toggleButton);
 
-        // ── Add to form (reverse order = top-to-bottom layout with Dock) ──
-        Controls.Add(buttonPanel);
-        Controls.Add(_detailLabel);
+        // ── Add to form ──
         Controls.Add(_statusLabel);
-        Controls.Add(_deviceCombo);
+        Controls.Add(_detailLabel);
+        Controls.Add(barPanel);
 
         // ── Timer ──
         _refreshTimer = new System.Windows.Forms.Timer { Interval = 3000 };
@@ -171,7 +181,7 @@ public sealed class MainForm : Form
     }
 
     // ──────────────────────────────────────────
-    // Toggle (async — no DoEvents, no Thread.Sleep)
+    // Toggle (async)
     // ──────────────────────────────────────────
     private async void ToggleButton_Click(object? sender, EventArgs e)
     {
@@ -185,7 +195,6 @@ public sealed class MainForm : Form
 
         try
         {
-            // ── Path A: try direct write (works when process is already elevated) ──
             _deviceManager.SetEnabled(_deviceInfo, targetOn);
             _detailLabel.Text = "Restarting audio service to apply changes...";
             _deviceManager.RestartAudioService();
@@ -194,7 +203,6 @@ public sealed class MainForm : Form
         }
         catch (UnauthorizedAccessException)
         {
-            // ── Path B: self-elevate via UAC, retry in a child process ──
             _detailLabel.Text = "Requesting administrator privileges...";
 
             var psi = new ProcessStartInfo
@@ -230,8 +238,8 @@ public sealed class MainForm : Form
             }
             catch (Exception ex) when (ex is not UnauthorizedAccessException)
             {
-                ShowErrorAndRecover("Administrator privileges are required to modify audio settings.\n\n" +
-                    "Right-click the application and select 'Run as administrator', or click 'Yes' in the UAC prompt.");
+                ShowErrorAndRecover("Administrator privileges are required.\n\n" +
+                    "Right-click and Run as administrator, or accept the UAC prompt.");
             }
         }
         catch (Exception ex)
@@ -258,7 +266,7 @@ public sealed class MainForm : Form
         if (_deviceInfo is null)
         {
             SetUI("No device selected", Color.FromArgb(180, 85, 20),
-                  "Select a playback device from the list above", "Refresh", enabled: true);
+                  "Select a device from the list", "Refresh", enabled: true);
             _refreshTimer.Interval = 5000;
             return;
         }
@@ -270,16 +278,16 @@ public sealed class MainForm : Form
             switch (_currentState)
             {
                 case DeviceManager.LoudnessState.On:
-                    SetUI("● Loudness Equalization: ON", Color.FromArgb(22, 130, 80),
-                          $"Device: {_deviceInfo.FriendlyName}", "Disable", enabled: true);
+                    SetUI("● Loudness Equalization: ON", Color.FromArgb(34, 139, 34),
+                          $"{_deviceInfo.FriendlyName}", "Disable", enabled: true);
                     break;
                 case DeviceManager.LoudnessState.Off:
-                    SetUI("○ Loudness Equalization: OFF", Color.DimGray,
-                          $"Device: {_deviceInfo.FriendlyName}", "Enable", enabled: true);
+                    SetUI("○ Loudness Equalization: OFF", Color.FromArgb(120, 120, 120),
+                          $"{_deviceInfo.FriendlyName}", "Enable", enabled: true);
                     break;
                 default:
-                    SetUI("State unknown", Color.FromArgb(180, 80, 20),
-                          $"Device: {_deviceInfo.FriendlyName} (no FxProperties found)", "Retry", enabled: true);
+                    SetUI("State unknown", Color.FromArgb(200, 120, 30),
+                          $"{_deviceInfo.FriendlyName} (no FxProperties found)", "Retry", enabled: true);
                     break;
             }
 
@@ -301,6 +309,23 @@ public sealed class MainForm : Form
         _detailLabel.Text      = detail;
         _toggleButton.Text     = buttonText;
         _toggleButton.Enabled  = enabled;
+
+        // Button styling based on state
+        if (buttonText == "Enable")
+        {
+            _toggleButton.BackColor  = Color.FromArgb(34, 139, 34);
+            _toggleButton.ForeColor  = Color.White;
+        }
+        else if (buttonText == "Disable")
+        {
+            _toggleButton.BackColor  = Color.FromArgb(200, 60, 60);
+            _toggleButton.ForeColor  = Color.White;
+        }
+        else
+        {
+            _toggleButton.BackColor  = Color.FromArgb(66, 133, 244);
+            _toggleButton.ForeColor  = Color.White;
+        }
     }
 
     private void SetBusy(bool busy, string? detailText)
