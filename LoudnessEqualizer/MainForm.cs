@@ -7,6 +7,7 @@ public sealed class MainForm : Form
     // ── State ──
     private readonly DeviceManager _deviceManager;
     private readonly System.Windows.Forms.Timer _refreshTimer;
+    private readonly Lang _lang;
     private List<DeviceManager.DeviceInfo> _allDevices = new();
     private DeviceManager.DeviceInfo? _deviceInfo;
     private DeviceManager.LoudnessState _currentState;
@@ -24,12 +25,13 @@ public sealed class MainForm : Form
     private const int FormH = 180;
     private const int PadX  = 30;
 
-    public MainForm(string? deviceName = null)
+    public MainForm(string? deviceName = null, Lang lang = Lang.En)
     {
+        _lang = lang;
         _deviceManager = new DeviceManager(deviceName);
 
         // ── Window ──
-        Text            = "Loudness Equalizer";
+        Text            = Strings.WindowTitle(_lang);
         ClientSize      = new Size(FormW, FormH);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox     = false;
@@ -45,7 +47,7 @@ public sealed class MainForm : Form
             ForeColor = Color.FromArgb(50, 50, 50),
             Size      = new Size(FormW - PadX * 2, 42),
             Location  = new Point(PadX, 16),
-            Text      = "Detecting device..."
+            Text      = Strings.Detecting(_lang)
         };
 
         // ── Detail label ──
@@ -72,18 +74,18 @@ public sealed class MainForm : Form
             DropDownStyle = ComboBoxStyle.DropDownList,
             Font          = new Font("Segoe UI", 9f),
             Size          = new Size(220, 28),
-            Location      = new Point(0, 7)  // vertically centered in 42px panel
+            Location      = new Point(0, 7)
         };
         _deviceCombo.SelectedIndexChanged += DeviceCombo_SelectedIndexChanged;
 
         _toggleButton = new Button
         {
             Size      = new Size(130, 38),
-            Text      = "Toggle",
+            Text      = Strings.ToggleBtn(_lang),
             Enabled   = false,
             FlatStyle = FlatStyle.Flat,
             Font      = new Font("Segoe UI", 10f, FontStyle.Bold),
-            Location  = new Point(250, 2)  // 220 + 30 gap, v-centered in 42px panel
+            Location  = new Point(250, 2)
         };
         _toggleButton.Click += ToggleButton_Click;
         _toggleButton.FlatAppearance.BorderSize = 0;
@@ -107,8 +109,8 @@ public sealed class MainForm : Form
             if (_isBusy)
             {
                 e.Cancel = true;
-                MessageBox.Show(this, "An operation is in progress. Please wait...",
-                    "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(this, Strings.BusyClose(_lang),
+                    Strings.Info(_lang), MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         };
 
@@ -153,7 +155,7 @@ public sealed class MainForm : Form
 
         if (_allDevices.Count == 0)
         {
-            _deviceCombo.Items.Add("(no devices found)");
+            _deviceCombo.Items.Add(_lang == Lang.Zh ? "(未找到设备)" : "(no devices found)");
             _deviceCombo.SelectedIndex = 0;
             _deviceCombo.Enabled = false;
             _deviceInfo = null;
@@ -191,19 +193,19 @@ public sealed class MainForm : Form
         bool targetOn = _currentState != DeviceManager.LoudnessState.On;
         string verb   = targetOn ? "on" : "off";
         _isBusy = true;
-        SetBusy(true, targetOn ? "Enabling Loudness Equalization..." : "Disabling Loudness Equalization...");
+        SetBusy(true, targetOn ? Strings.Enabling(_lang) : Strings.Disabling(_lang));
 
         try
         {
             _deviceManager.SetEnabled(_deviceInfo, targetOn);
-            _detailLabel.Text = "Restarting audio service to apply changes...";
+            _detailLabel.Text = Strings.RestartingAudio(_lang);
             _deviceManager.RestartAudioService();
             await Task.Delay(500);
             RefreshState();
         }
         catch (UnauthorizedAccessException)
         {
-            _detailLabel.Text = "Requesting administrator privileges...";
+            _detailLabel.Text = Strings.RequestingAdmin(_lang);
 
             var psi = new ProcessStartInfo
             {
@@ -218,7 +220,7 @@ public sealed class MainForm : Form
                 using var process = Process.Start(psi);
                 if (process is null)
                 {
-                    ShowErrorAndRecover("Failed to launch elevated process.");
+                    ShowErrorAndRecover(Strings.FailedLaunch(_lang));
                     return;
                 }
 
@@ -229,7 +231,7 @@ public sealed class MainForm : Form
                 }
                 catch (OperationCanceledException)
                 {
-                    ShowErrorAndRecover("Elevated process did not complete within 30 seconds.");
+                    ShowErrorAndRecover(Strings.ProcessTimeout(_lang));
                     return;
                 }
 
@@ -238,8 +240,7 @@ public sealed class MainForm : Form
             }
             catch (Exception ex) when (ex is not UnauthorizedAccessException)
             {
-                ShowErrorAndRecover("Administrator privileges are required.\n\n" +
-                    "Right-click and Run as administrator, or accept the UAC prompt.");
+                ShowErrorAndRecover(Strings.NeedAdmin(_lang));
             }
         }
         catch (Exception ex)
@@ -254,7 +255,8 @@ public sealed class MainForm : Form
 
     private void ShowErrorAndRecover(string message)
     {
-        MessageBox.Show(this, message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        MessageBox.Show(this, message, Strings.ErrorTitle(_lang),
+            MessageBoxButtons.OK, MessageBoxIcon.Error);
         SetBusy(false, null);
     }
 
@@ -265,8 +267,8 @@ public sealed class MainForm : Form
     {
         if (_deviceInfo is null)
         {
-            SetUI("No device selected", Color.FromArgb(180, 85, 20),
-                  "Select a device from the list", "Refresh", enabled: true);
+            SetUI(Strings.NoDevice(_lang), Color.FromArgb(180, 85, 20),
+                  Strings.NoDeviceDetail(_lang), Strings.RefreshBtn(_lang), enabled: true);
             _refreshTimer.Interval = 5000;
             return;
         }
@@ -278,16 +280,16 @@ public sealed class MainForm : Form
             switch (_currentState)
             {
                 case DeviceManager.LoudnessState.On:
-                    SetUI("● Loudness Equalization: ON", Color.FromArgb(34, 139, 34),
-                          $"{_deviceInfo.FriendlyName}", "Disable", enabled: true);
+                    SetUI(Strings.LoudnessOn(_lang), Color.FromArgb(34, 139, 34),
+                          _deviceInfo.FriendlyName, Strings.DisableBtn(_lang), enabled: true);
                     break;
                 case DeviceManager.LoudnessState.Off:
-                    SetUI("○ Loudness Equalization: OFF", Color.FromArgb(120, 120, 120),
-                          $"{_deviceInfo.FriendlyName}", "Enable", enabled: true);
+                    SetUI(Strings.LoudnessOff(_lang), Color.FromArgb(120, 120, 120),
+                          _deviceInfo.FriendlyName, Strings.EnableBtn(_lang), enabled: true);
                     break;
                 default:
-                    SetUI("State unknown", Color.FromArgb(200, 120, 30),
-                          $"{_deviceInfo.FriendlyName} (no FxProperties found)", "Retry", enabled: true);
+                    SetUI(Strings.StateUnknown(_lang), Color.FromArgb(200, 120, 30),
+                          $"{_deviceInfo.FriendlyName} ({Strings.NoFxProperties(_lang)})", Strings.RetryBtn(_lang), enabled: true);
                     break;
             }
 
@@ -295,7 +297,7 @@ public sealed class MainForm : Form
         }
         catch (Exception ex)
         {
-            SetUI("Error", Color.Red, ex.Message, "Retry", enabled: true);
+            SetUI(Strings.Error(_lang), Color.Red, ex.Message, Strings.RetryBtn(_lang), enabled: true);
         }
     }
 
@@ -310,21 +312,20 @@ public sealed class MainForm : Form
         _toggleButton.Text     = buttonText;
         _toggleButton.Enabled  = enabled;
 
-        // Button styling based on state
-        if (buttonText == "Enable")
+        if (buttonText == Strings.EnableBtn(_lang))
         {
-            _toggleButton.BackColor  = Color.FromArgb(34, 139, 34);
-            _toggleButton.ForeColor  = Color.White;
+            _toggleButton.BackColor = Color.FromArgb(34, 139, 34);
+            _toggleButton.ForeColor = Color.White;
         }
-        else if (buttonText == "Disable")
+        else if (buttonText == Strings.DisableBtn(_lang))
         {
-            _toggleButton.BackColor  = Color.FromArgb(200, 60, 60);
-            _toggleButton.ForeColor  = Color.White;
+            _toggleButton.BackColor = Color.FromArgb(200, 60, 60);
+            _toggleButton.ForeColor = Color.White;
         }
         else
         {
-            _toggleButton.BackColor  = Color.FromArgb(66, 133, 244);
-            _toggleButton.ForeColor  = Color.White;
+            _toggleButton.BackColor = Color.FromArgb(66, 133, 244);
+            _toggleButton.ForeColor = Color.White;
         }
     }
 

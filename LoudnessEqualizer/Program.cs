@@ -85,23 +85,36 @@ internal static class NativeMethods
 // ──────────────────────────────────────────────
 static class Program
 {
-    private const string AppName = "Loudness Equalizer";
-
     [STAThread]
     static int Main(string[] args)
     {
         try
         {
-            // Parse --device argument (extract before processing --apply)
+            // Parse --device, --lang arguments
             string? deviceName = null;
+            var lang = Lang.En;
+
+            // Auto-detect: if exe name contains "-zh", default to Chinese
+            string? exeName = Environment.GetCommandLineArgs().FirstOrDefault();
+            if (exeName is not null && (exeName.Contains("-zh", StringComparison.OrdinalIgnoreCase)
+                || exeName.Contains("_zh", StringComparison.OrdinalIgnoreCase)))
+            {
+                lang = Lang.Zh;
+            }
+
             var remaining = new List<string>();
+
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--device" && i + 1 < args.Length)
                     deviceName = args[++i];
+                else if (args[i] == "--lang" && i + 1 < args.Length)
+                    lang = args[++i].StartsWith("zh", StringComparison.OrdinalIgnoreCase) ? Lang.Zh : Lang.En;
                 else
                     remaining.Add(args[i]);
             }
+
+            string appName = Strings.WindowTitle(lang);
 
             // Headless mode: apply loudness setting and restart audio
             if (remaining.Count >= 2 && remaining[0] == "--apply")
@@ -109,9 +122,8 @@ static class Program
                 if (!remaining[1].Equals("on", StringComparison.OrdinalIgnoreCase)
                     && !remaining[1].Equals("off", StringComparison.OrdinalIgnoreCase))
                 {
-                    MessageBox.Show(
-                        $"Invalid argument \"{remaining[1]}\".\n\nUsage: {AppName} --apply on|off [--device \"Device Name\"]",
-                        AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(Strings.InvalidArg(lang, remaining[1]),
+                        appName, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return 1;
                 }
 
@@ -120,8 +132,9 @@ static class Program
                 var dev = mgr.FindTargetDevice();
                 if (dev is null)
                 {
-                    MessageBox.Show("No playback device found. Use --device to specify one.", AppName,
-                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(
+                        deviceName is not null ? Strings.DeviceNotFound(lang, deviceName) : Strings.NoPlaybackDevice(lang),
+                        appName, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return 1;
                 }
 
@@ -131,7 +144,7 @@ static class Program
             }
 
             ApplicationConfiguration.Initialize();
-            Application.Run(new MainForm(deviceName));
+            Application.Run(new MainForm(deviceName, lang));
             return 0;
         }
         catch (Exception ex)
@@ -139,7 +152,7 @@ static class Program
             string detail = $"{ex.GetType().FullName}: {ex.Message}";
             if (ex.StackTrace is string st)
                 detail += $"\n\n{st}";
-            MessageBox.Show(detail, AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(detail, "Loudness Equalizer", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }
