@@ -1,10 +1,14 @@
 # Loudness Equalizer
 
+[中文版](README-zh.md)
+
 Toggle Windows built-in **Loudness Equalization** audio effect for any playback device — with a single click or command line.
 
 ![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
+
+> **Note:** This project was developed entirely using [Claude Code](https://claude.ai/code) — an AI-powered coding agent. While it works for the intended use case, it has not been extensively tested across all hardware configurations. Expect rough edges. Bug reports and pull requests are welcome.
 
 ## What it does
 
@@ -33,13 +37,21 @@ LoudnessEqualizer.exe
 
 Launches a small window showing the device status and a toggle button.
 
+### Language
+
+```
+LoudnessEqualizer.exe --lang zh
+```
+
+Switches the UI to Chinese. Or rename the exe with `-zh` or `_zh` in the filename for auto-detection.
+
 ### Specify a device
 
 ```
 LoudnessEqualizer.exe --device "Your Device Name"
 ```
 
-Matches a playback device whose name contains the given text (case-insensitive). Without `--device`, matches the first available playback device.
+Matches by exact device name first, then falls back to substring match (case-insensitive). Without `--device`, picks the first available playback device.
 
 Find your device name in **Control Panel → Sound → Playback** tab.
 
@@ -52,11 +64,17 @@ LoudnessEqualizer.exe --apply off --device "Headset"
 
 Enables or disables loudness equalization without showing the GUI. Exits with code 0 on success, 1 on failure. Useful for scripts, hotkeys, or automation.
 
+```
+LoudnessEqualizer.exe --help
+```
+
+Shows all available options.
+
 ## Build from Source
 
 ```bash
 git clone https://github.com/Ey4n9/Loudness_Equalization.git
-cd REPO/LoudnessEqualizer
+cd Loudness_Equalization/LoudnessEqualizer
 dotnet build -c Release
 ```
 
