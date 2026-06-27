@@ -56,7 +56,7 @@ Enables or disables loudness equalization without showing the GUI. Exits with co
 
 ```bash
 git clone https://github.com/Ey4n9/Loudness_Equalization.git
-cd REPO/BlackSharkLoudnessEqualizer
+cd REPO/LoudnessEqualizer
 dotnet build -c Release
 ```
 

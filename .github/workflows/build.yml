@@ -21,7 +21,7 @@ jobs:
 
       - name: Build
         run: dotnet build -c Release
-        working-directory: BlackSharkLoudnessEqualizer
+        working-directory: LoudnessEqualizer
 
       - name: Publish (self-contained)
         run: >
@@ -30,13 +30,13 @@ jobs:
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
           -o publish
-        working-directory: BlackSharkLoudnessEqualizer
+        working-directory: LoudnessEqualizer
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: LoudnessEqualizer
-          path: BlackSharkLoudnessEqualizer/publish/BlackSharkLoudnessEqualizer.exe
+          path: LoudnessEqualizer/publish/LoudnessEqualizer.exe
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -50,5 +50,5 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: BlackSharkLoudnessEqualizer.exe
+          files: LoudnessEqualizer.exe
           generate_release_notes: true
