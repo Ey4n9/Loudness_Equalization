@@ -7,11 +7,14 @@ public sealed class MainForm : Form
     // ── State ──
     private readonly DeviceManager _deviceManager;
     private readonly System.Windows.Forms.Timer _refreshTimer;
+    private List<DeviceManager.DeviceInfo> _allDevices = new();
     private DeviceManager.DeviceInfo? _deviceInfo;
     private DeviceManager.LoudnessState _currentState;
     private bool _isBusy;
+    private bool _suppressComboEvent;
 
     // ── Controls ──
+    private readonly ComboBox _deviceCombo;
     private readonly Label _statusLabel;
     private readonly Label _detailLabel;
     private readonly Button _toggleButton;
@@ -22,11 +25,19 @@ public sealed class MainForm : Form
 
         // ── Window ──
         Text            = "Loudness Equalizer";
-        ClientSize      = new Size(440, 190);
+        ClientSize      = new Size(440, 228);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox     = false;
         StartPosition   = FormStartPosition.CenterScreen;
         Font            = new Font("Segoe UI", 9f);
+
+        // ── Device combo ──
+        _deviceCombo = new ComboBox
+        {
+            Dock      = DockStyle.Top,
+            DropDownStyle = ComboBoxStyle.DropDownList
+        };
+        _deviceCombo.SelectedIndexChanged += DeviceCombo_SelectedIndexChanged;
 
         // ── Status label ──
         _statusLabel = new Label
@@ -69,10 +80,11 @@ public sealed class MainForm : Form
         };
         buttonPanel.Controls.Add(_toggleButton);
 
-        // ── Add to form ──
+        // ── Add to form (reverse order = top-to-bottom layout with Dock) ──
         Controls.Add(buttonPanel);
         Controls.Add(_detailLabel);
         Controls.Add(_statusLabel);
+        Controls.Add(_deviceCombo);
 
         // ── Timer ──
         _refreshTimer = new System.Windows.Forms.Timer { Interval = 3000 };
@@ -90,6 +102,7 @@ public sealed class MainForm : Form
             }
         };
 
+        PopulateDeviceList(deviceName);
         RefreshState();
     }
 
@@ -105,11 +118,64 @@ public sealed class MainForm : Form
     }
 
     // ──────────────────────────────────────────
+    // Device list
+    // ──────────────────────────────────────────
+    private void PopulateDeviceList(string? preferredDeviceName)
+    {
+        _suppressComboEvent = true;
+
+        _allDevices = _deviceManager.ListAllDevices();
+        _deviceCombo.Items.Clear();
+
+        int selectIndex = -1;
+
+        for (int i = 0; i < _allDevices.Count; i++)
+        {
+            var dev = _allDevices[i];
+            _deviceCombo.Items.Add(dev.FriendlyName);
+
+            if (selectIndex < 0 && preferredDeviceName is not null
+                && dev.FriendlyName.Contains(preferredDeviceName, StringComparison.OrdinalIgnoreCase))
+            {
+                selectIndex = i;
+            }
+        }
+
+        if (_allDevices.Count == 0)
+        {
+            _deviceCombo.Items.Add("(no devices found)");
+            _deviceCombo.SelectedIndex = 0;
+            _deviceCombo.Enabled = false;
+            _deviceInfo = null;
+        }
+        else
+        {
+            if (selectIndex < 0) selectIndex = 0;
+            _deviceCombo.SelectedIndex = selectIndex;
+            _deviceInfo = _allDevices[selectIndex];
+            _deviceCombo.Enabled = true;
+        }
+
+        _suppressComboEvent = false;
+    }
+
+    private void DeviceCombo_SelectedIndexChanged(object? sender, EventArgs e)
+    {
+        if (_suppressComboEvent) return;
+
+        int idx = _deviceCombo.SelectedIndex;
+        if (idx >= 0 && idx < _allDevices.Count)
+            _deviceInfo = _allDevices[idx];
+
+        if (!_isBusy) RefreshState();
+    }
+
+    // ──────────────────────────────────────────
     // Toggle (async — no DoEvents, no Thread.Sleep)
     // ──────────────────────────────────────────
     private async void ToggleButton_Click(object? sender, EventArgs e)
     {
-        if (_deviceInfo is null) { RefreshState(); return; }
+        if (_deviceInfo is null) return;
         if (_isBusy) return;
 
         bool targetOn = _currentState != DeviceManager.LoudnessState.On;
@@ -159,7 +225,6 @@ public sealed class MainForm : Form
                     return;
                 }
 
-                // Child process shows its own error MessageBox on failure.
                 await Task.Delay(1000);
                 RefreshState();
             }
@@ -190,18 +255,16 @@ public sealed class MainForm : Form
     // ──────────────────────────────────────────
     private void RefreshState()
     {
+        if (_deviceInfo is null)
+        {
+            SetUI("No device selected", Color.FromArgb(180, 85, 20),
+                  "Select a playback device from the list above", "Refresh", enabled: true);
+            _refreshTimer.Interval = 5000;
+            return;
+        }
+
         try
         {
-            _deviceInfo = _deviceManager.FindTargetDevice();
-
-            if (_deviceInfo is null)
-            {
-                SetUI("Device not detected", Color.FromArgb(180, 85, 20),
-                      "Please connect your audio device", "Refresh", enabled: true);
-                _refreshTimer.Interval = 5000;
-                return;
-            }
-
             _currentState = _deviceManager.GetState(_deviceInfo);
 
             switch (_currentState)

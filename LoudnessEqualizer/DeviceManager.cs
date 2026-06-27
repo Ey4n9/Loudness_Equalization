@@ -62,7 +62,38 @@ internal sealed class DeviceManager : IDisposable
     }
 
     // ──────────────────────────────────────────
-    // 1. Find device — COM enumeration for GUID
+    // 1. List all playback devices
+    // ──────────────────────────────────────────
+    public List<DeviceInfo> ListAllDevices()
+    {
+        var devices = new List<DeviceInfo>();
+
+        using RegistryKey? renderRoot = Registry.LocalMachine.OpenSubKey(RenderRoot, false);
+        if (renderRoot is null) return devices;
+
+        foreach (string id in renderRoot.GetSubKeyNames())
+        {
+            using RegistryKey? deviceKey = renderRoot.OpenSubKey(id, false);
+            using RegistryKey? props = deviceKey?.OpenSubKey("Properties", false);
+            if (deviceKey is null || props is null) continue;
+
+            string? name = ReadRegistryString(props, "{a45c254e-df1c-4efd-8020-67d146a850e0},2");
+            if (name is not null)
+            {
+                devices.Add(new DeviceInfo
+                {
+                    DeviceId     = id,
+                    FriendlyName = name,
+                    RegistryPath = RenderRoot + "\\" + id
+                });
+            }
+        }
+
+        return devices;
+    }
+
+    // ──────────────────────────────────────────
+    // 2. Find device — COM enumeration for GUID
     // ──────────────────────────────────────────
     public DeviceInfo? FindTargetDevice()
     {
