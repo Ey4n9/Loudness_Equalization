@@ -19,7 +19,7 @@ This tool finds your playback device and toggles the setting instantly, with a s
 
 ## Download
 
-Go to the [Releases](https://github.com/USER/REPO/releases) page and download `LoudnessEqualizer.exe`.
+Go to the [Releases](https://github.com/Ey4n9/Loudness_Equalization/releases) page and download `LoudnessEqualizer.exe`.
 
 > **Administrator privileges are required.** Right-click and select "Run as administrator", or accept the UAC prompt when toggling.
 
@@ -55,7 +55,7 @@ Enables or disables loudness equalization without showing the GUI. Exits with co
 ## Build from Source
 
 ```bash
-git clone https://github.com/USER/REPO.git
+git clone https://github.com/Ey4n9/Loudness_Equalization.git
 cd REPO/BlackSharkLoudnessEqualizer
 dotnet build -c Release
 ```

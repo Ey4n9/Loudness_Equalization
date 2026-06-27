@@ -11,9 +11,9 @@
     <AssemblyVersion>1.0.0</AssemblyVersion>
     <FileVersion>1.0.0</FileVersion>
     <Description>Toggle Windows built-in Loudness Equalization audio effect for any playback device</Description>
-    <RepositoryUrl>https://github.com/USER/REPO</RepositoryUrl>
+    <RepositoryUrl>https://github.com/Ey4n9/Loudness_Equalization</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageProjectUrl>https://github.com/USER/REPO</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/Ey4n9/Loudness_Equalization</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
