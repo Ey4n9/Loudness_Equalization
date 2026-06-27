@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace BlackSharkLoudnessEqualizer;
+namespace LoudnessEqualizer;
 
 public sealed class MainForm : Form
 {

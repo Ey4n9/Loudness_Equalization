@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace BlackSharkLoudnessEqualizer;
+namespace LoudnessEqualizer;
 
 // ──────────────────────────────────────────────
 // COM types — only used for device enumeration
@@ -120,8 +120,7 @@ static class Program
                 var dev = mgr.FindTargetDevice();
                 if (dev is null)
                 {
-                    string targetName = deviceName ?? "BlackShark V3 - Game";
-                    MessageBox.Show($"Device \"{targetName}\" not found.", AppName,
+                    MessageBox.Show("No playback device found. Use --device to specify one.", AppName,
                         MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return 1;
                 }

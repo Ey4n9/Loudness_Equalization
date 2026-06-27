@@ -39,7 +39,7 @@ Launches a small window showing the device status and a toggle button.
 LoudnessEqualizer.exe --device "Your Device Name"
 ```
 
-Matches a playback device whose name contains the given text (case-insensitive). Defaults to `BlackShark V3 - Game` if not specified.
+Matches a playback device whose name contains the given text (case-insensitive). Without `--device`, matches the first available playback device.
 
 Find your device name in **Control Panel → Sound → Playback** tab.
 

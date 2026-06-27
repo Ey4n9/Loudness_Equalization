@@ -3,7 +3,7 @@ using System.Diagnostics;
 using Microsoft.Win32;
 using System.Text;
 
-namespace BlackSharkLoudnessEqualizer;
+namespace LoudnessEqualizer;
 
 internal sealed class DeviceManager : IDisposable
 {
@@ -36,7 +36,7 @@ internal sealed class DeviceManager : IDisposable
 
     public DeviceManager(string? targetDeviceName = null)
     {
-        _targetDeviceName = targetDeviceName ?? "BlackShark V3 - Game";
+        _targetDeviceName = targetDeviceName ?? "";
         var type = Type.GetTypeFromCLSID(Clsid.MMDeviceEnumerator)
                    ?? throw new InvalidOperationException("MMDeviceEnumerator COM class not registered.");
         _enumerator = (IMMDeviceEnumerator)Activator.CreateInstance(type)!;
