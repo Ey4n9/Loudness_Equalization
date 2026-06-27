@@ -217,11 +217,25 @@ internal sealed class DeviceManager : IDisposable
             using RegistryKey? key = Registry.LocalMachine.OpenSubKey(path, false);
             if (key is null) continue;
 
+            // Primary: check the loudness enabled binary value
             byte[]? bytes = key.GetValue(LoudnessEnabledValue) as byte[];
             if (bytes is not null && bytes.Length >= 10
                 && bytes[0] == 0x0b && bytes[1] == 0x00 && bytes[2] == 0x00 && bytes[3] == 0x00
                 && bytes[4] == 0x01 && bytes[5] == 0x00 && bytes[6] == 0x00 && bytes[7] == 0x00)
                 return (bytes[8] == 0xff && bytes[9] == 0xff) ? LoudnessState.On : LoudnessState.Off;
+
+            // Fallback: infer state from the Enhancement CLSID value.
+            // {d04e05a6...},0 = valid GUID → APO enabled; null GUID → disabled.
+            // This covers drivers (Realtek, etc.) that only write the CLSID
+            // and don't create the per-property binary under {fc52a749...},3
+            // until after our tool has been used once.
+            string? clsid = ReadRegistryString(key, EnhancementClsidValue);
+            if (clsid is not null && clsid.Length >= 32)
+            {
+                if (clsid.Contains("00000000-0000-0000-0000-000000000000", StringComparison.OrdinalIgnoreCase))
+                    return LoudnessState.Off;
+                return LoudnessState.On;
+            }
         }
 
         return LoudnessState.Unknown;
@@ -487,10 +501,13 @@ internal sealed class DeviceManager : IDisposable
         // Read existing values via .NET (HKLM read is public-read)
         using RegistryKey? readKey = Registry.LocalMachine.OpenSubKey(fullPath, false);
 
-        // 1. Write Enhancement CLSID if not already present
-        if (readKey?.GetValue(EnhancementClsidValue) is null)
+        // 1. Write Enhancement CLSID — always overwrite.
+        //    Some drivers (Realtek, etc.) already have this key set to the
+        //    null GUID {0000...} to disable the APO.  We must change it on
+        //    enable AND on disable so the state matches what we intend.
         {
-            byte[] clsidData = Encoding.Unicode.GetBytes(AudioEngineClsId + "\0");
+            string targetClsid = enable ? AudioEngineClsId : "{00000000-0000-0000-0000-000000000000}";
+            byte[] clsidData = Encoding.Unicode.GetBytes(targetClsid + "\0");
             int hr = RegSetValueEx(hKey.Handle, EnhancementClsidValue, 0, REG_SZ,
                 clsidData, (uint)clsidData.Length);
             if (hr != ERROR_SUCCESS)
