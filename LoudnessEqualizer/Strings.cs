@@ -23,6 +23,7 @@ public static class Strings
     public static string DisableBtn(Lang lang) => lang == Lang.Zh ? "关闭" : "Disable";
     public static string RefreshBtn(Lang lang) => lang == Lang.Zh ? "刷新" : "Refresh";
     public static string RetryBtn(Lang lang) => lang == Lang.Zh ? "重试" : "Retry";
+    public static string SoundSettingsBtn(Lang lang) => lang == Lang.Zh ? "声音设置" : "Sound";
 
     // ── Busy / progress ──
     public static string Enabling(Lang lang) => lang == Lang.Zh ? "正在开启响度均衡…" : "Enabling Loudness Equalization...";

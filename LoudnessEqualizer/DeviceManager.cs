@@ -29,6 +29,27 @@ internal sealed class DeviceManager : IDisposable
         0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00
     };
 
+    /// <summary>
+    /// Device name keywords that indicate a digital-only output where
+    /// loudness equalization is not applicable.  Case-insensitive match.
+    /// </summary>
+    private static readonly string[] DigitalOnlyKeywords =
+    {
+        "HDMI", "S/PDIF", "SPDIF", "Digital", "NVIDIA Output", "NVIDIA HDMI"
+    };
+
+    /// <summary>
+    /// Returns true for digital-only outputs (HDMI, S/PDIF, etc.) that
+    /// don't benefit from loudness equalization.
+    /// </summary>
+    public static bool IsDigitalOnly(string friendlyName)
+    {
+        foreach (string kw in DigitalOnlyKeywords)
+            if (friendlyName.Contains(kw, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
     // ── COM ──
     private readonly IMMDeviceEnumerator _enumerator;
     private readonly string _targetDeviceName;

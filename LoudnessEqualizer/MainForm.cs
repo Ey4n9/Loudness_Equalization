@@ -19,9 +19,10 @@ public sealed class MainForm : Form
     private readonly Label _statusLabel;
     private readonly Label _detailLabel;
     private readonly Button _toggleButton;
+    private readonly Button _soundSettingsButton;
 
     // ── Layout constants ──
-    private const int FormW = 480;
+    private const int FormW = 580;
     private const int FormH = 180;
     private const int PadX  = 30;
 
@@ -61,19 +62,19 @@ public sealed class MainForm : Form
             Text      = ""
         };
 
-        // ── Control bar panel (combo + button side by side) ──
+        // ── Control bar panel (combo + buttons side by side) ──
         var barPanel = new Panel
         {
             BackColor = Color.White,
-            Size      = new Size(380, 42),
-            Location  = new Point((FormW - 380) / 2, 100)
+            Size      = new Size(480, 42),
+            Location  = new Point((FormW - 480) / 2, 100)
         };
 
         _deviceCombo = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
             Font          = new Font("Segoe UI", 9f),
-            Size          = new Size(220, 28),
+            Size          = new Size(200, 28),
             Location      = new Point(0, 7)
         };
         _deviceCombo.SelectedIndexChanged += DeviceCombo_SelectedIndexChanged;
@@ -85,13 +86,28 @@ public sealed class MainForm : Form
             Enabled   = false,
             FlatStyle = FlatStyle.Flat,
             Font      = new Font("Segoe UI", 10f, FontStyle.Bold),
-            Location  = new Point(250, 2)
+            Location  = new Point(210, 2)
         };
         _toggleButton.Click += ToggleButton_Click;
         _toggleButton.FlatAppearance.BorderSize = 0;
 
+        _soundSettingsButton = new Button
+        {
+            Size      = new Size(130, 38),
+            Text      = Strings.SoundSettingsBtn(_lang),
+            FlatStyle = FlatStyle.Flat,
+            Font      = new Font("Segoe UI", 10f, FontStyle.Bold),
+            Location  = new Point(350, 2),
+            BackColor = Color.FromArgb(240, 240, 240),
+            ForeColor = Color.FromArgb(50, 50, 50)
+        };
+        _soundSettingsButton.Click += SoundSettingsButton_Click;
+        _soundSettingsButton.FlatAppearance.BorderSize = 1;
+        _soundSettingsButton.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200);
+
         barPanel.Controls.Add(_deviceCombo);
         barPanel.Controls.Add(_toggleButton);
+        barPanel.Controls.Add(_soundSettingsButton);
 
         // ── Add to form ──
         Controls.Add(_statusLabel);
@@ -136,7 +152,9 @@ public sealed class MainForm : Form
     {
         _suppressComboEvent = true;
 
-        _allDevices = _deviceManager.ListAllDevices();
+        _allDevices = _deviceManager.ListAllDevices()
+            .Where(d => !DeviceManager.IsDigitalOnly(d.FriendlyName))
+            .ToList();
         _deviceCombo.Items.Clear();
 
         int selectIndex = -1;
@@ -192,6 +210,22 @@ public sealed class MainForm : Form
             _deviceInfo = _allDevices[idx];
 
         if (!_isBusy) RefreshState();
+    }
+
+    // ──────────────────────────────────────────
+    // Sound Settings — open Windows Sound control panel
+    // ──────────────────────────────────────────
+    private void SoundSettingsButton_Click(object? sender, EventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("mmsys.cpl") { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, Strings.Error(_lang),
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     // ──────────────────────────────────────────
