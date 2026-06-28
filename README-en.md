@@ -15,13 +15,15 @@ Get the exe from [Releases](https://github.com/Ey4n9/Loudness_Equalization/relea
 - `LoudnessEqualizer.exe` — English UI
 - `LoudnessEqualizer-zh.exe` — Chinese UI
 
-> **Must right-click → Run as administrator**, otherwise audio settings cannot be modified.
+> If toggling doesn't work, try right-click → Run as administrator.
 
 ## How it Works
 
 Writes to the Loudness Equalization APO config under registry `FxProperties`, bypassing the SYSTEM ACL via `SeRestorePrivilege` + `REG_OPTION_BACKUP_RESTORE`, then restarts the `audiosrv` service to apply.
 
-## Note
+## Notes
+
+- **Voice chat apps**: After toggling loudness equalization, some voice chat apps (e.g. OOPZ, Discord, QQ) may lose microphone/speaker detection. Restart the voice chat app to restore it.
 
 This project was built entirely with [Claude Code](https://claude.ai/code). I'm not a professional developer and can't guarantee it works on every PC.
 

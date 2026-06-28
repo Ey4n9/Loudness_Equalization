@@ -15,13 +15,15 @@
 - `LoudnessEqualizer-zh.exe` — 中文界面
 - `LoudnessEqualizer.exe` — 英文界面
 
-> **必须右键 → 以管理员身份运行**，否则无法修改音频设置。
+> 如果无法正常开关响度均衡，尝试右键 → 以管理员身份运行。
 
 ## 原理
 
 通过修改注册表 `FxProperties` 下的响度均衡 APO 配置，使用 `SeRestorePrivilege` + `REG_OPTION_BACKUP_RESTORE` 绕过 SYSTEM ACL 写入，最后重启 `audiosrv` 服务生效。
 
-## 注意
+## 注意事项
+
+- **语音软件**：开关响度均衡后，部分语音聊天软件（如 OOPZ、Discord、QQ 等）可能无法识别麦克风和扬声器，此时重启语音软件即可恢复。
 
 本项目完全由 [Claude Code](https://claude.ai/code) 制作，个人能力有限，无法保证在所有电脑上正常运行。
 
