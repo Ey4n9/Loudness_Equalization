@@ -9,10 +9,22 @@ internal sealed class DeviceManager : IDisposable
 {
     // ── Registry constants ──
     private const string RenderRoot = @"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render";
-    private const string EnhancementClsidValue = "{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},0";
-    private const string LoudnessEnabledValue  = "{fc52a749-4be9-4510-896e-966ba6525980},3";
-    private const string ReleaseTimeValue      = "{9c00eeed-edce-4cd8-ae08-cb05e8ef57a0},3";
-    private const string AudioEngineClsId      = "{DFF21CE1-F70F-11D0-B917-00A0C9223196}";
+
+    // PKEY_FX_StreamEffectClsid — property key for SFX APO registration.
+    // Numbered slots: ,1=PreMix, ,2=PostMix, ,3=UI page, ,5=Stream, ,6=Mode.
+    // We only write ,1/,2/,3 to avoid overwriting driver-specific ,5/,6/,7.
+    private const string FxStreamEffectKey = "{d04e05a6-594b-4fb6-a80d-01af5eed7d1d}";
+
+    // CLSIDs for the Windows built-in Loudness Equalization APO stack
+    private const string LoudnessApoClsId    = "{62dc1a93-ae24-464c-a43e-452f824c4250}"; // PreMix SFX
+    private const string LoudnessEffectClsId = "{637c490d-eee3-4c0a-973f-371958802da2}";  // PostMix SFX
+    private const string LoudnessPageClsId   = "{5860E1C5-F95C-4a7a-8EC8-8AEF24F379A1}"; // Property page
+
+    private const string LoudnessEnabledValue = "{fc52a749-4be9-4510-896e-966ba6525980},3";
+    private const string ReleaseTimeValue     = "{9c00eeed-edce-4cd8-ae08-cb05e8ef57a0},3";
+
+    // Slot value names under FxStreamEffectKey
+    private static string FxSlot(int n) => FxStreamEffectKey + "," + n;
 
     private static readonly byte[] DefaultEnabledBytes = new byte[]
     {
@@ -35,7 +47,9 @@ internal sealed class DeviceManager : IDisposable
     /// </summary>
     private static readonly string[] DigitalOnlyKeywords =
     {
-        "HDMI", "S/PDIF", "SPDIF", "Digital", "NVIDIA Output", "NVIDIA HDMI"
+        "HDMI", "S/PDIF", "SPDIF", "Digital", "TOSLINK", "DisplayPort",
+        "NVIDIA Output", "NVIDIA HDMI",
+        "数字音频"   // Chinese: "Digital Audio"
     };
 
     /// <summary>
@@ -245,17 +259,14 @@ internal sealed class DeviceManager : IDisposable
                 && bytes[4] == 0x01 && bytes[5] == 0x00 && bytes[6] == 0x00 && bytes[7] == 0x00)
                 return (bytes[8] == 0xff && bytes[9] == 0xff) ? LoudnessState.On : LoudnessState.Off;
 
-            // Fallback: infer state from the Enhancement CLSID value.
-            // {d04e05a6...},0 = valid GUID → APO enabled; null GUID → disabled.
-            // This covers drivers (Realtek, etc.) that only write the CLSID
-            // and don't create the per-property binary under {fc52a749...},3
-            // until after our tool has been used once.
-            string? clsid = ReadRegistryString(key, EnhancementClsidValue);
-            if (clsid is not null && clsid.Length >= 32)
+            // Fallback: check if any SFX slot has the LEQ APO CLSID registered.
+            // A non-null LEQ CLSID in any slot means the APO is loaded → ON.
+            foreach (int n in new[] { 1, 2, 5 })
             {
-                if (clsid.Contains("00000000-0000-0000-0000-000000000000", StringComparison.OrdinalIgnoreCase))
-                    return LoudnessState.Off;
-                return LoudnessState.On;
+                string? slotClsid = ReadRegistryString(key, FxSlot(n));
+                if (slotClsid is not null
+                    && slotClsid.Equals(LoudnessApoClsId, StringComparison.OrdinalIgnoreCase))
+                    return LoudnessState.On;
             }
         }
 
@@ -272,15 +283,19 @@ internal sealed class DeviceManager : IDisposable
     // ──────────────────────────────────────────
     public void SetEnabled(DeviceInfo deviceInfo, bool enable)
     {
+        // APO CLSIDs MUST be written to FxProperties root — the audio
+        // engine only reads SFX slot assignments from the root key.
+        string fxRoot = deviceInfo.RegistryPath + @"\FxProperties";
         List<string> targets = GetFxCandidatePaths(deviceInfo);
+
+        // Always include the root; deduplicate
+        if (!targets.Contains(fxRoot, StringComparer.OrdinalIgnoreCase))
+            targets.Insert(0, fxRoot);
 
         if (targets.Count == 0)
         {
-            // No FxProperties exists — create the loudness APO structure.
-            // Windows expects: FxProperties\{d04e05a6...}\User
-            string defaultPath = deviceInfo.RegistryPath
-                + @"\FxProperties\{d04e05a6-594b-4fb6-a80d-01af5eed7d1d}\User";
-            targets.Add(defaultPath);
+            // No FxProperties exists at all — create from scratch.
+            targets.Add(fxRoot);
         }
 
         // Ensure backup/restore privileges are enabled
@@ -510,47 +525,59 @@ internal sealed class DeviceManager : IDisposable
     }
 
     /// <summary>
-    /// Write loudness equalization values to an existing registry key.
-    /// The key must already be openable (we use .NET Registry for read
-    /// to check existence, then native RegSetValueEx for write via the
-    /// privilege-backed handle).
+    /// Write loudness equalization APO CLSIDs and per-property values to
+    /// a registry key.  This registers (or unregisters) the Windows
+    /// built-in Loudness Equalization SFX APO on the target device.
+    ///
+    /// Slot layout under PKEY_FX_StreamEffectClsid ({d04e05a6...}):
+    ///   ,1 = PreMix  → LEQ APO ({62dc1a93...})
+    ///   ,2 = PostMix → LEQ effect ({637c490d...})
+    ///   ,3 = UI page → LEQ property page ({5860E1C5...})
+    ///   ,5/,6/,7  — driver-specific, we never touch these
     /// </summary>
     private static void WriteLoudnessValues(string fullPath, bool enable)
     {
         using SafeRegHandle hKey = OpenOrCreateKey(fullPath);
-
-        // Read existing values via .NET (HKLM read is public-read)
         using RegistryKey? readKey = Registry.LocalMachine.OpenSubKey(fullPath, false);
 
-        // 1. Write Enhancement CLSID — always overwrite.
-        //    Some drivers (Realtek, etc.) already have this key set to the
-        //    null GUID {0000...} to disable the APO.  We must change it on
-        //    enable AND on disable so the state matches what we intend.
-        {
-            string targetClsid = enable ? AudioEngineClsId : "{00000000-0000-0000-0000-000000000000}";
-            byte[] clsidData = Encoding.Unicode.GetBytes(targetClsid + "\0");
-            int hr = RegSetValueEx(hKey.Handle, EnhancementClsidValue, 0, REG_SZ,
-                clsidData, (uint)clsidData.Length);
-            if (hr != ERROR_SUCCESS)
-                throw new IOException($"Failed to write {EnhancementClsidValue} (error 0x{hr:x}).");
-        }
+        string nullGuid = "{00000000-0000-0000-0000-000000000000}";
 
-        // 2. Write Loudness enabled value (always — patches existing or uses default)
+        // 1. Register (or unregister) the LEQ APO in PreMix / PostMix slots.
+        //    These are the slots the Windows audio engine processes BEFORE
+        //    driver-specific slots ,5+, so LEQ runs regardless of driver.
+        WriteRegString(hKey, FxSlot(1), enable ? LoudnessApoClsId : nullGuid);
+        WriteRegString(hKey, FxSlot(2), enable ? LoudnessEffectClsId : nullGuid);
+
+        // 2. Property page CLSID — only write when enabling (don't destroy
+        //    driver's property page on disable, user might want it back).
+        if (enable)
+            WriteRegString(hKey, FxSlot(3), LoudnessPageClsId);
+
+        // 3. Loudness enabled binary value (always)
         byte[]? existing = readKey?.GetValue(LoudnessEnabledValue) as byte[];
         byte[] patched = PatchEnabledBytes(existing, enable);
-        int hr2 = RegSetValueEx(hKey.Handle, LoudnessEnabledValue, 0, REG_BINARY,
+        int hr = RegSetValueEx(hKey.Handle, LoudnessEnabledValue, 0, REG_BINARY,
             patched, (uint)patched.Length);
-        if (hr2 != ERROR_SUCCESS)
-            throw new IOException($"Failed to write {LoudnessEnabledValue} (error 0x{hr2:x}).");
+        if (hr != ERROR_SUCCESS)
+            throw new IOException($"Failed to write {LoudnessEnabledValue} (error 0x{hr:x}).");
 
-        // 3. Write Release Time if not already present
+        // 4. Release Time (write once — never overwrite user preference)
         if (readKey?.GetValue(ReleaseTimeValue) is null)
         {
-            int hr3 = RegSetValueEx(hKey.Handle, ReleaseTimeValue, 0, REG_BINARY,
+            int hr2 = RegSetValueEx(hKey.Handle, ReleaseTimeValue, 0, REG_BINARY,
                 DefaultReleaseTimeBytes, (uint)DefaultReleaseTimeBytes.Length);
-            if (hr3 != ERROR_SUCCESS)
-                throw new IOException($"Failed to write {ReleaseTimeValue} (error 0x{hr3:x}).");
+            if (hr2 != ERROR_SUCCESS)
+                throw new IOException($"Failed to write {ReleaseTimeValue} (error 0x{hr2:x}).");
         }
+    }
+
+    /// <summary>Write a REG_SZ value via the native privilege-backed handle.</summary>
+    private static void WriteRegString(SafeRegHandle hKey, string valueName, string data)
+    {
+        byte[] bytes = Encoding.Unicode.GetBytes(data + "\0");
+        int hr = RegSetValueEx(hKey.Handle, valueName, 0, REG_SZ, bytes, (uint)bytes.Length);
+        if (hr != ERROR_SUCCESS)
+            throw new IOException($"Failed to write {valueName} (error 0x{hr:x}).");
     }
 
     // ──────────────────────────────────────────
@@ -636,7 +663,7 @@ internal sealed class DeviceManager : IDisposable
 
     private static bool HasRelevantValue(RegistryKey key)
     {
-        return key.GetValue(EnhancementClsidValue) is not null
+        return key.GetValue(FxSlot(1)) is not null
             || key.GetValue(LoudnessEnabledValue) is not null
             || key.GetValue(ReleaseTimeValue) is not null;
     }
