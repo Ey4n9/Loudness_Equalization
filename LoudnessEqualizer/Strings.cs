@@ -50,4 +50,9 @@ public static class Strings
         ? "正在执行操作，请稍候…"
         : "An operation is in progress. Please wait...";
     public static string Info(Lang lang) => lang == Lang.Zh ? "提示" : "Info";
+
+    // ── CLI help ──
+    public static string HelpText(Lang lang) => lang == Lang.Zh
+        ? "Loudness Equalizer — 开关任意播放设备的响度均衡\n\n用法:\n  LoudnessEqualizer                    启动图形界面\n  LoudnessEqualizer --apply on|off      命令行切换（需管理员权限）\n  LoudnessEqualizer --apply on|off --device \"设备名\"  指定设备\n  LoudnessEqualizer --lang zh           中文界面\n  LoudnessEqualizer --help              显示本帮助"
+        : "Loudness Equalizer — Toggle Loudness Equalization on any playback device\n\nUsage:\n  LoudnessEqualizer                    Launch GUI\n  LoudnessEqualizer --apply on|off      Toggle from CLI (requires admin)\n  LoudnessEqualizer --apply on|off --device \"Name\"   Specify device\n  LoudnessEqualizer --lang zh           Chinese UI\n  LoudnessEqualizer --help              Show this help";
 }

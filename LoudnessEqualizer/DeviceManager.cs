@@ -10,6 +10,10 @@ internal sealed class DeviceManager : IDisposable
     // ── Registry constants ──
     private const string RenderRoot = @"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render";
 
+    // Registry value name for PKEY_Device_FriendlyName (pid=14 would be
+    // the COM property, but Windows stores the MMDevices display name under pid=2)
+    private const string DeviceFriendlyNameValue = "{a45c254e-df1c-4efd-8020-67d146a850e0},2";
+
     // PKEY_FX_StreamEffectClsid — property key for SFX APO registration.
     // Numbered slots: ,1=PreMix, ,2=PostMix, ,3=UI page, ,5=Stream, ,6=Mode.
     // We only write ,1/,2/,3 to avoid overwriting driver-specific ,5/,6/,7.
@@ -112,7 +116,7 @@ internal sealed class DeviceManager : IDisposable
             using RegistryKey? props = deviceKey?.OpenSubKey("Properties", false);
             if (deviceKey is null || props is null) continue;
 
-            string? name = ReadRegistryString(props, "{a45c254e-df1c-4efd-8020-67d146a850e0},2");
+            string? name = ReadRegistryString(props, DeviceFriendlyNameValue);
             if (name is not null)
             {
                 devices.Add(new DeviceInfo
@@ -225,8 +229,7 @@ internal sealed class DeviceManager : IDisposable
             using RegistryKey? props = deviceKey?.OpenSubKey("Properties", false);
             if (deviceKey is null || props is null) continue;
 
-            // Read friendly name: {a45c254e-df1c-4efd-8020-67d146a850e0},2
-            string? name = ReadRegistryString(props, "{a45c254e-df1c-4efd-8020-67d146a850e0},2");
+            string? name = ReadRegistryString(props, DeviceFriendlyNameValue);
             if (name is not null && name.Contains(_targetDeviceName, StringComparison.OrdinalIgnoreCase))
             {
                 return new DeviceInfo
@@ -261,11 +264,13 @@ internal sealed class DeviceManager : IDisposable
 
             // Fallback: check if any SFX slot has the LEQ APO CLSID registered.
             // A non-null LEQ CLSID in any slot means the APO is loaded → ON.
+            // Slot ,2 (PostMix) uses LoudnessEffectClsId; other slots use LoudnessApoClsId.
             foreach (int n in new[] { 1, 2, 5 })
             {
                 string? slotClsid = ReadRegistryString(key, FxSlot(n));
+                string expected = n == 2 ? LoudnessEffectClsId : LoudnessApoClsId;
                 if (slotClsid is not null
-                    && slotClsid.Equals(LoudnessApoClsId, StringComparison.OrdinalIgnoreCase))
+                    && slotClsid.Equals(expected, StringComparison.OrdinalIgnoreCase))
                     return LoudnessState.On;
             }
         }
@@ -288,15 +293,11 @@ internal sealed class DeviceManager : IDisposable
         string fxRoot = deviceInfo.RegistryPath + @"\FxProperties";
         List<string> targets = GetFxCandidatePaths(deviceInfo);
 
-        // Always include the root; deduplicate
+        // Always include the root; deduplicate.
+        // GetFxCandidatePaths guarantees at least fxRoot as fallback,
+        // so targets is never empty after this.
         if (!targets.Contains(fxRoot, StringComparer.OrdinalIgnoreCase))
             targets.Insert(0, fxRoot);
-
-        if (targets.Count == 0)
-        {
-            // No FxProperties exists at all — create from scratch.
-            targets.Add(fxRoot);
-        }
 
         // Ensure backup/restore privileges are enabled
         EnableBackupPrivileges();
@@ -320,13 +321,13 @@ internal sealed class DeviceManager : IDisposable
             }
         }
 
-        if (writeCount == 0)
+        if (writeCount != targets.Count)
         {
             string detail = errors.Count > 0
                 ? $"  Details:\n  • {string.Join("\n  • ", errors)}"
                 : "";
-            throw new UnauthorizedAccessException(
-                $"Unable to write audio enhancement settings.{detail}");
+            throw new IOException(
+                $"Only {writeCount}/{targets.Count} FxProperties paths were written successfully.{detail}");
         }
     }
 
@@ -448,6 +449,12 @@ internal sealed class DeviceManager : IDisposable
                 {
                     Debug.WriteLine($"AdjustTokenPrivileges for SeBackupPrivilege failed (error {Marshal.GetLastWin32Error()}). Continue with SeRestorePrivilege only.");
                 }
+                else
+                {
+                    int backupErr = Marshal.GetLastWin32Error();
+                    if (backupErr == ERROR_NOT_ALL_ASSIGNED)
+                        Debug.WriteLine("SeBackupPrivilege is not assigned to this process token. Key creation may fail.");
+                }
             }
         }
         finally
@@ -538,7 +545,6 @@ internal sealed class DeviceManager : IDisposable
     private static void WriteLoudnessValues(string fullPath, bool enable)
     {
         using SafeRegHandle hKey = OpenOrCreateKey(fullPath);
-        using RegistryKey? readKey = Registry.LocalMachine.OpenSubKey(fullPath, false);
 
         string nullGuid = "{00000000-0000-0000-0000-000000000000}";
 
@@ -554,7 +560,7 @@ internal sealed class DeviceManager : IDisposable
             WriteRegString(hKey, FxSlot(3), LoudnessPageClsId);
 
         // 3. Loudness enabled binary value (always)
-        byte[]? existing = readKey?.GetValue(LoudnessEnabledValue) as byte[];
+        byte[]? existing = ReadRegBinary(hKey.Handle, LoudnessEnabledValue);
         byte[] patched = PatchEnabledBytes(existing, enable);
         int hr = RegSetValueEx(hKey.Handle, LoudnessEnabledValue, 0, REG_BINARY,
             patched, (uint)patched.Length);
@@ -562,12 +568,20 @@ internal sealed class DeviceManager : IDisposable
             throw new IOException($"Failed to write {LoudnessEnabledValue} (error 0x{hr:x}).");
 
         // 4. Release Time (write once — never overwrite user preference)
-        if (readKey?.GetValue(ReleaseTimeValue) is null)
+        //    Use the native handle to check existence, since the managed
+        //    OpenSubKey may fail on SYSTEM-owned FxProperties keys.
         {
-            int hr2 = RegSetValueEx(hKey.Handle, ReleaseTimeValue, 0, REG_BINARY,
-                DefaultReleaseTimeBytes, (uint)DefaultReleaseTimeBytes.Length);
-            if (hr2 != ERROR_SUCCESS)
-                throw new IOException($"Failed to write {ReleaseTimeValue} (error 0x{hr2:x}).");
+            uint type;
+            uint size = 0;
+            int hr2 = RegQueryValueEx(hKey.Handle, ReleaseTimeValue,
+                IntPtr.Zero, out type, IntPtr.Zero, ref size);
+            if (hr2 != ERROR_SUCCESS) // value does not exist yet
+            {
+                hr2 = RegSetValueEx(hKey.Handle, ReleaseTimeValue, 0, REG_BINARY,
+                    DefaultReleaseTimeBytes, (uint)DefaultReleaseTimeBytes.Length);
+                if (hr2 != ERROR_SUCCESS)
+                    throw new IOException($"Failed to write {ReleaseTimeValue} (error 0x{hr2:x}).");
+            }
         }
     }
 
@@ -578,6 +592,28 @@ internal sealed class DeviceManager : IDisposable
         int hr = RegSetValueEx(hKey.Handle, valueName, 0, REG_SZ, bytes, (uint)bytes.Length);
         if (hr != ERROR_SUCCESS)
             throw new IOException($"Failed to write {valueName} (error 0x{hr:x}).");
+    }
+
+    /// <summary>Read a REG_BINARY value via the native privilege-backed handle.</summary>
+    private static byte[]? ReadRegBinary(IntPtr hKey, string valueName)
+    {
+        uint type;
+        uint size = 0;
+        int hr = RegQueryValueEx(hKey, valueName, IntPtr.Zero, out type, IntPtr.Zero, ref size);
+        if (hr != ERROR_SUCCESS || size == 0)
+            return null;
+
+        byte[] data = new byte[size];
+        var handle = System.Runtime.InteropServices.GCHandle.Alloc(data, System.Runtime.InteropServices.GCHandleType.Pinned);
+        try
+        {
+            hr = RegQueryValueEx(hKey, valueName, IntPtr.Zero, out type, handle.AddrOfPinnedObject(), ref size);
+            return hr == ERROR_SUCCESS ? data : null;
+        }
+        finally
+        {
+            handle.Free();
+        }
     }
 
     // ──────────────────────────────────────────
@@ -641,16 +677,11 @@ internal sealed class DeviceManager : IDisposable
             }
         }
 
-        // Fallback: add any FxProperties\{child}\User paths
+        // Fallback: write only to FxProperties root — the audio engine
+        // always reads SFX slot assignments from the root key.
         if (targets.Count == 0)
         {
-            foreach (string childName in root.GetSubKeyNames())
-            {
-                string userPath = fxRoot + "\\" + childName + "\\User";
-                using RegistryKey? user = Registry.LocalMachine.OpenSubKey(userPath, false);
-                if (user is not null)
-                    targets.Add(userPath);
-            }
+            targets.Add(fxRoot);
         }
 
         // Prefer "User" paths, avoid "Volatile"
@@ -664,14 +695,21 @@ internal sealed class DeviceManager : IDisposable
     private static bool HasRelevantValue(RegistryKey key)
     {
         return key.GetValue(FxSlot(1)) is not null
+            || key.GetValue(FxSlot(2)) is not null
+            || key.GetValue(FxSlot(3)) is not null
             || key.GetValue(LoudnessEnabledValue) is not null
             || key.GetValue(ReleaseTimeValue) is not null;
     }
 
     private static byte[] PatchEnabledBytes(byte[]? existing, bool enable)
     {
-        byte[] bytes = (existing is not null && existing.Length >= 10)
-            ? (byte[])existing.Clone()
+        // Validate the 8-byte header; fall back to defaults if corrupted.
+        bool validHeader = existing is not null && existing.Length >= 10
+            && existing[0] == 0x0b && existing[1] == 0x00 && existing[2] == 0x00 && existing[3] == 0x00
+            && existing[4] == 0x01 && existing[5] == 0x00 && existing[6] == 0x00 && existing[7] == 0x00;
+
+        byte[] bytes = validHeader
+            ? (byte[])existing!.Clone()
             : (byte[])(enable ? DefaultEnabledBytes : DefaultDisabledBytes).Clone();
 
         bytes[8] = enable ? (byte)0xff : (byte)0x00;

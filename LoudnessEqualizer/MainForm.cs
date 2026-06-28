@@ -157,31 +157,24 @@ public sealed class MainForm : Form
             .ToList();
         _deviceCombo.Items.Clear();
 
-        int selectIndex = -1;
+        // Single pass: exact match takes priority, substring match as fallback
+        int exactIndex = -1;
+        int subIndex   = -1;
 
-        // First pass: exact match
         for (int i = 0; i < _allDevices.Count; i++)
         {
             _deviceCombo.Items.Add(_allDevices[i].FriendlyName);
-            if (selectIndex < 0 && preferredDeviceName is not null
-                && _allDevices[i].FriendlyName.Equals(preferredDeviceName, StringComparison.OrdinalIgnoreCase))
+            if (preferredDeviceName is not null)
             {
-                selectIndex = i;
+                if (_allDevices[i].FriendlyName.Equals(preferredDeviceName, StringComparison.OrdinalIgnoreCase))
+                    exactIndex = i;
+                else if (subIndex < 0
+                    && _allDevices[i].FriendlyName.Contains(preferredDeviceName, StringComparison.OrdinalIgnoreCase))
+                    subIndex = i;
             }
         }
 
-        // Second pass: substring fallback
-        if (selectIndex < 0 && preferredDeviceName is not null)
-        {
-            for (int i = 0; i < _allDevices.Count; i++)
-            {
-                if (_allDevices[i].FriendlyName.Contains(preferredDeviceName, StringComparison.OrdinalIgnoreCase))
-                {
-                    selectIndex = i;
-                    break;
-                }
-            }
-        }
+        int selectIndex = exactIndex >= 0 ? exactIndex : subIndex;
 
         if (_allDevices.Count == 0)
         {
@@ -245,7 +238,7 @@ public sealed class MainForm : Form
         {
             _deviceManager.SetEnabled(_deviceInfo, targetOn);
             _detailLabel.Text = Strings.RestartingAudio(_lang);
-            _deviceManager.RestartAudioService();
+            await Task.Run(() => _deviceManager.RestartAudioService());
             await Task.Delay(500);
             RefreshState();
         }
@@ -253,10 +246,16 @@ public sealed class MainForm : Form
         {
             _detailLabel.Text = Strings.RequestingAdmin(_lang);
 
+            string args = $"--apply {verb}";
+            if (_deviceInfo is not null)
+                args += $" --device \"{_deviceInfo.FriendlyName}\"";
+            if (_lang == Lang.Zh)
+                args += " --lang zh";
+
             var psi = new ProcessStartInfo
             {
                 FileName        = Application.ExecutablePath,
-                Arguments       = $"--apply {verb}",
+                Arguments       = args,
                 UseShellExecute = true,
                 Verb            = "runas"
             };
@@ -358,20 +357,20 @@ public sealed class MainForm : Form
         _toggleButton.Text     = buttonText;
         _toggleButton.Enabled  = enabled;
 
-        if (buttonText == Strings.EnableBtn(_lang))
+        switch (_currentState)
         {
-            _toggleButton.BackColor = Color.FromArgb(34, 139, 34);
-            _toggleButton.ForeColor = Color.White;
-        }
-        else if (buttonText == Strings.DisableBtn(_lang))
-        {
-            _toggleButton.BackColor = Color.FromArgb(200, 60, 60);
-            _toggleButton.ForeColor = Color.White;
-        }
-        else
-        {
-            _toggleButton.BackColor = Color.FromArgb(66, 133, 244);
-            _toggleButton.ForeColor = Color.White;
+            case DeviceManager.LoudnessState.On:
+                _toggleButton.BackColor = Color.FromArgb(200, 60, 60);
+                _toggleButton.ForeColor = Color.White;
+                break;
+            case DeviceManager.LoudnessState.Off:
+                _toggleButton.BackColor = Color.FromArgb(34, 139, 34);
+                _toggleButton.ForeColor = Color.White;
+                break;
+            default:
+                _toggleButton.BackColor = Color.FromArgb(66, 133, 244);
+                _toggleButton.ForeColor = Color.White;
+                break;
         }
     }
 
