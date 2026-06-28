@@ -23,7 +23,7 @@ Writes to the Loudness Equalization APO config under registry `FxProperties`, by
 
 ## Notes
 
-- **Voice chat apps**: After toggling loudness equalization, some voice chat apps (e.g. OOPZ, Discord, QQ) may lose microphone/speaker detection. Restart the voice chat app to restore it.
+After toggling loudness equalization, some voice chat apps (e.g. Discord, Teams, KOOK) may lose microphone/speaker detection. Restart the voice chat app to restore it.
 
 This project was built entirely with [Claude Code](https://claude.ai/code). I'm not a professional developer and can't guarantee it works on every PC.
 
